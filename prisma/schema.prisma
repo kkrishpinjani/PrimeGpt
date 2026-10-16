@@ -1,0 +1,461 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── WS1: tenancy, accounts, roles ─────────────────────────
+// Every business row carries tenantId. All access goes through src/lib/tenant-db.ts.
+
+model Tenant {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  kind          TenantKind @default(STANDARD)   // STANDARD | SOLO | WHITELABEL
+  // white-label branding (WS7) – shown in UI, never exposes the brain
+  brandName     String?
+  brandColor    String?
+  brandLogoUrl  String?
+  // settings
+  autonomyInboxWatch Boolean @default(false)   // scheduled behaviour is opt-in (decision: on-demand only at launch)
+  autonomyFollowups  Boolean @default(false)
+  aiMonthlyBudgetCents Int   @default(20000)    // cost control
+  // billing (WS6)
+  stripeCustomerId   String? @unique
+  subscriptionStatus SubStatus @default(NONE)
+  stripeSubscriptionId String?
+  setupFeePaid       Boolean @default(false)
+  currentPeriodEnd   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  memberships   Membership[]
+  clients       Client[]
+  jobOrders     JobOrder[]
+  candidates    Candidate[]
+  contacts      Contact[]
+  messages      Message[]
+  savedSearches SavedSearch[]
+  runs          Run[]
+  interviews    Interview[]
+  documents     Document[]
+  integrations  Integration[]
+  devices       ExecutorDevice[]
+  usage         UsageEvent[]
+  dnc           DoNotContact[]
+  audit         AuditLog[]
+  prospects     Prospect[]
+  invites       Invite[]
+}
+
+enum TenantKind {
+  STANDARD
+  SOLO
+  WHITELABEL
+}
+enum SubStatus {
+  NONE
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  isPlatformAdmin Boolean @default(false)
+  createdAt    DateTime @default(now())
+  memberships  Membership[]
+}
+
+model Membership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      Role     @default(RECRUITER)
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  RECRUITER
+  VIEWER
+}
+model Invite {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  role      Role     @default(RECRUITER)
+  token     String   @unique
+  expiresAt DateTime
+  acceptedAt DateTime?
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+}
+
+// ───────────────────────── WS2: recruiting data model ─────────────────────────
+
+model Client {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  industry  String?
+  website   String?
+  notes     String?  @db.Text
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobOrders JobOrder[]
+  contacts  Contact[]
+  @@index([tenantId])
+}
+
+model JobOrder {
+  id        String   @id @default(cuid())
+  tenantId  String
+  clientId  String?
+  title     String
+  location  String?
+  description String? @db.Text
+  mustHaves String?  @db.Text      // newline separated
+  niceToHaves String? @db.Text
+  compMin   Int?
+  compMax   Int?
+  compCurrency String @default("USD")
+  discloseComp Boolean @default(false) // comp-disclosure branching in outreach
+  status    String   @default("open")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  searches  SavedSearch[]
+  candidates Candidate[]
+  interviews Interview[]
+  @@index([tenantId])
+  @@index([clientId])
+}
+
+model Candidate {
+  id         String   @id @default(cuid())
+  tenantId   String
+  jobOrderId String?
+  runId      String?
+  fullName   String
+  headline   String?
+  currentTitle String?
+  currentCompany String?
+  location   String?
+  email      String?
+  phone      String?
+  linkedinUrl String?
+  source     String   @default("manual")    // linkedin_recruiter | indeed | apollo | exa | csv | manual | candidategpt
+  sourceRef  String?                          // external id, used for dedupe
+  summary    String?  @db.Text
+  skills     String?  @db.Text                // comma separated
+  rawProfile String?  @db.LongText            // text captured from profile
+  fitScore   Int?                             // 0-100
+  scoreRationale String? @db.Text
+  scoreBreakdown Json?
+  brief      String?  @db.LongText
+  status     CandidateStatus @default(NEW)    // new / saved / rejected / contacted / replied / interviewing / placed
+  stage      String   @default("sourced")     // pipeline stage
+  notes      String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobOrder   JobOrder? @relation(fields: [jobOrderId], references: [id], onDelete: SetNull)
+  run        Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
+  messages   Message[]
+  interviews Interview[]
+  @@unique([tenantId, source, sourceRef])
+  @@index([tenantId, status])
+  @@index([tenantId, jobOrderId])
+  @@index([tenantId, fitScore])
+  @@fulltext([fullName, headline, currentTitle, currentCompany, summary, skills])
+}
+
+enum CandidateStatus {
+  NEW
+  SAVED
+  REJECTED
+  CONTACTED
+  REPLIED
+  INTERVIEWING
+  PLACED
+}
+model Contact {
+  id        String   @id @default(cuid())
+  tenantId  String
+  clientId  String?
+  fullName  String
+  title     String?
+  email     String?
+  phone     String?
+  linkedinUrl String?
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client    Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  messages  Message[]
+  @@index([tenantId])
+}
+
+// Client acquisition: prospect companies found via Apollo + web search
+model Prospect {
+  id        String   @id @default(cuid())
+  tenantId  String
+  company   String
+  domain    String?
+  contactName String?
+  contactTitle String?
+  contactEmail String?
+  linkedinUrl String?
+  rationale String?  @db.Text
+  status    String   @default("new")   // new / contacted / converted / dropped
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, status])
+}
+
+// Unified message/event log: single source of truth for "what did we say to whom"
+model Message {
+  id          String   @id @default(cuid())
+  tenantId    String
+  candidateId String?
+  contactId   String?
+  channel     Channel
+  direction   Direction @default(OUTBOUND)
+  status      MsgStatus @default(DRAFT)     // DRAFT → APPROVED → SENT (approval gate) | FAILED | RECEIVED
+  subject     String?
+  body        String   @db.Text
+  kind        String   @default("outreach") // outreach | followup | reply | system
+  classification String?                    // inbound: interested / not_interested / question / ooo / unsubscribe
+  externalId  String?
+  threadKey   String?
+  approvedById String?
+  approvedAt  DateTime?
+  sentAt      DateTime?
+  error       String?
+  followupOfId String?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate   Candidate? @relation(fields: [candidateId], references: [id], onDelete: SetNull)
+  contact     Contact? @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  @@index([tenantId, status])
+  @@index([tenantId, candidateId])
+  @@index([tenantId, threadKey])
+}
+
+enum Channel {
+  EMAIL
+  SMS
+  LINKEDIN
+}
+enum Direction {
+  OUTBOUND
+  INBOUND
+}
+enum MsgStatus {
+  DRAFT
+  APPROVED
+  SENDING
+  SENT
+  FAILED
+  RECEIVED
+}
+model DoNotContact {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String?
+  phone     String?
+  linkedinUrl String?
+  reason    String?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+}
+
+model SavedSearch {
+  id         String   @id @default(cuid())
+  tenantId   String
+  jobOrderId String?
+  name       String
+  keywords   String?  @db.Text
+  titles     String?  @db.Text
+  locations  String?  @db.Text
+  excludes   String?  @db.Text
+  sources    String   @default("linkedin_recruiter")   // csv of sources
+  maxResults Int      @default(25)
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobOrder   JobOrder? @relation(fields: [jobOrderId], references: [id], onDelete: SetNull)
+  runs       Run[]
+  @@index([tenantId])
+}
+
+// ───────────────────────── WS4: job / queue model ─────────────────────────
+
+model Run {
+  id         String   @id @default(cuid())
+  tenantId   String
+  searchId   String?
+  type       RunType  @default(SOURCING)
+  status     RunStatus @default(QUEUED)
+  progress   Int      @default(0)
+  params     Json?
+  summary    String?  @db.Text
+  error      String?  @db.Text
+  needsHuman String?  @db.Text      // captcha / verification surfaced for a human (never bypassed)
+  attempts   Int      @default(0)
+  lockedAt   DateTime?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdById String?
+  createdAt  DateTime @default(now())
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  search     SavedSearch? @relation(fields: [searchId], references: [id], onDelete: SetNull)
+  events     RunEvent[]
+  candidates Candidate[]
+  @@index([tenantId, status])
+  @@index([status, createdAt])
+}
+
+enum RunType {
+  SOURCING
+  SCORING
+  BRIEF
+  OUTREACH_DRAFT
+  INBOX_WATCH
+  PROSPECTING
+  SEND_MESSAGE
+}
+enum RunStatus {
+  QUEUED
+  RUNNING
+  NEEDS_HUMAN
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+model RunEvent {
+  id        String   @id @default(cuid())
+  runId     String
+  level     String   @default("info")
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+  run       Run      @relation(fields: [runId], references: [id], onDelete: Cascade)
+  @@index([runId, createdAt])
+}
+
+model Interview {
+  id          String   @id @default(cuid())
+  tenantId    String
+  candidateId String
+  jobOrderId  String?
+  startsAt    DateTime
+  endsAt      DateTime
+  meetLink    String?
+  calendarEventId String?
+  attendeeEmails String?
+  status      String   @default("scheduled")
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOrder    JobOrder? @relation(fields: [jobOrderId], references: [id], onDelete: SetNull)
+  @@index([tenantId, startsAt])
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  tenantId  String
+  kind      String   // brief | comparison | shortlist
+  title     String
+  format    String   // docx | xlsx
+  data      Bytes    @db.LongBlob
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+}
+
+// ───────────────────────── WS5: local-hands executor ─────────────────────────
+
+model ExecutorDevice {
+  id          String   @id @default(cuid())
+  tenantId    String
+  label       String   @default("My computer")
+  pairingCode String?  @unique        // one-time, short-lived
+  pairingExpires DateTime?
+  tokenHash   String?  @unique        // sha256 of long-lived device token
+  lastSeenAt  DateTime?
+  online      Boolean  @default(false)
+  platformInfo String?
+  createdAt   DateTime @default(now())
+  revokedAt   DateTime?
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId])
+}
+
+// ───────────────────────── WS8: integrations (per tenant, encrypted) ─────────────────────────
+
+model Integration {
+  id        String   @id @default(cuid())
+  tenantId  String
+  provider  String   // gmail | gcalendar | quo | apollo | exa
+  accountLabel String?
+  secret    String   @db.Text      // AES-256-GCM encrypted JSON
+  status    String   @default("connected")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, provider])
+}
+
+// ───────────────────────── WS6/WS9: metering, audit ─────────────────────────
+
+model UsageEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  kind      String   // ai_tokens | sourcing_run | inmail | sms | email
+  quantity  Int      @default(1)
+  costCents Int      @default(0)
+  meta      Json?
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, kind, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  userId    String?
+  action    String
+  detail    String?  @db.Text
+  ip        String?
+  createdAt DateTime @default(now())
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  @@index([tenantId, createdAt])
+}
+
+model RateLimit {
+  key       String   @id
+  count     Int
+  resetAt   DateTime
+}
+
+model StripeEvent {
+  id        String   @id        // stripe event id → idempotent webhooks
+  type      String
+  createdAt DateTime @default(now())
+}

@@ -1,0 +1,15 @@
+# Persistent worker: job queue + executor gateway. Deploy to Fly.io / Railway / a VPS (NOT Vercel: jobs are long-lived).
+FROM node:22-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY package*.json ./
+RUN npm ci
+COPY prisma ./prisma
+RUN npx prisma generate
+COPY tsconfig.json ./
+COPY src ./src
+COPY worker ./worker
+ENV NODE_ENV=production
+EXPOSE 8009
+# Put a TLS-terminating proxy in front so devices connect over wss:// (GATEWAY_PUBLIC_URL=wss://hands.recruitgpt.ai)
+CMD ["npx", "tsx", "worker/index.ts"]

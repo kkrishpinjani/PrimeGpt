@@ -117,13 +117,40 @@ Risks addressed in design: ToS (human-in-loop, no bypass, caps, compliance page)
 
 ## §9 What the developer receives: n/a (inbound). §10 Open questions: answered in the proposal (approach to local hands = outbound-WS executor over the user's own Chrome; separate app; phasing above).
 
+## Phase 3 and remaining WS items (added after the first build)
+
+| Scope item | Status | Where |
+|---|---|---|
+| WS5 Package the local component for non-technical customers | ✅ built and tested (pairing, bundle, self-update with checksum, clean restart) · 🟡 not tried on a clean Windows machine | `GET /api/executor/installer` (personalised one-click `.cmd`), `scripts/build-helper.mjs` → `public/helper/*`, auto-update in `executor/src/index.ts` |
+| WS5/Phase 3 Managed residential sessions | 🟡 built, unverified: hosted helper image with residential-proxy + noVNC sign-in; request flow and admin provisioning | `Dockerfile.helper`, `docker/managed-entrypoint.sh`, Integrations page, `/app/admin` |
+| WS1/WS6 Solo-recruiter & white-label tiers | ✅ account types at signup, per-plan checkout, plan switching by operator, landing page plans · prices for these tiers are NOT in the scope document, so they are env-configured (`PRICE_SOLO_*`, `PRICE_WHITELABEL_*`) and show "Let's talk" until set | `src/lib/plans.ts`, `/app/admin` |
+| Platform operator console | ✅ | `/app/admin`, `npm run make-admin -- <email>` |
+| Phase 3 autonomy: scheduled follow-ups | ✅ opt-in; drafts only, never sent without approval; capped; idempotent (tested) | `worker/jobs/followups.ts`, Settings, Outreach "Draft follow-ups now" |
+| WS6 Metered add-ons if AI usage is passed through | ✅ off by default; per-workspace switch; monthly cron adds invoice items; idempotent (tested with a stubbed Stripe) · 🟡 live Stripe · rates not in scope doc, env-configured (`USAGE_*`) | `src/lib/usage-billing.ts`, `/api/cron/usage-billing` |
+| WS2 One-time migration (Carlos = tenant #1) | ✅ tested end to end against a synthetic SQLite database (dry-run, relinking, legacy tables skipped) · 🟡 column names must be confirmed against his real database | `scripts/import-sqlite.ts`, `tests/phase3.test.ts` |
+
+## Audit pass: items found missing on a line-by-line re-read, now built
+
+| Scope item | Status | Where |
+|---|---|---|
+| §3.2 / WS2 "ranks a shortlist from the local database": match a role against the whole talent pool | ✅ tested | Role page → "Match from my database"; `worker/jobs/match.ts`; `JobMatch` |
+| §3.2 run history; portal shell "runs" | ✅ | `/app/runs` (filters), dashboard link |
+| WS3 contacts, "message threads per contact" | ✅ | `/app/contacts`, `/app/contacts/[id]`, `/app/clients/[id]` (edit client, contacts, roles) |
+| §3.2 client acquisition: Apollo **+ web search**, enrich contacts | ✅ tested with stubbed APIs · 🟡 live | Prospects: "Target companies" (Exa) then "Find contact" (Apollo enrichment) |
+| WS9 data handling; privacy-page promises: edit/erase a candidate, export data, delete workspace | ✅ tested (erasure, CSV safety) | Candidate page (edit / erase), Settings → Your data, `/api/export/*` |
+| WS6 trial/onboarding | ✅ (trial length is configuration: `TRIAL_DAYS`; off when unset) | Billing "Start trial", dashboard "Get started" checklist |
+| WS5 "guide each customer to a reliable local setup" | ✅ | Integrations: live helper + browser status, step-by-step guide |
+| WS9 rate limiting | ✅ tested | `src/middleware.ts` (per-IP, all routes), per-user limit, DB limiter on login/pairing, tighter limits on exports/installer |
+| §2 "human services convert and upsell" | ✅ | `/app/expert-help` request form, operator inbox in Platform admin, optional email via `EXPERT_REQUESTS_EMAIL` |
+| WS5 packaging for any customer machine | ✅ scripts syntax-checked · 🟡 not run on real Mac/Linux | Windows `.cmd`, macOS `.command`, Linux `.sh` |
+| §10 open questions | ✅ | `docs/PROPOSAL_ANSWERS.md` |
+
 ## Known gaps / next steps
 
-1. **Live validation** of everything marked 🟡 (needs: Anthropic, Stripe, Google OAuth, Quo, Apollo, Exa credentials; a licensed LinkedIn Recruiter/Indeed account for the helper).
-2. Helper **installer/auto-update** for non-technical customers; managed residential sessions.
-3. Solo-recruiter / white-label **tier pricing and self-provisioning**; platform-admin console.
-4. **Password reset** and email verification (SMTP is wired; flows not yet built).
-5. Scheduled **follow-up automation** (`Tenant.autonomyFollowups` is reserved; only inbox watch is scheduled).
-6. Stripe **metered** add-ons for AI/InMail pass-through.
-7. Counsel review of legal pages; Google sensitive-scope verification.
-8. Confirm `scripts/import-sqlite.ts` column mappings against Carlos's real database.
+1. **Live validation** of everything marked 🟡: needs Anthropic, Stripe, Google OAuth, Quo, Apollo and Exa credentials; a licensed LinkedIn Recruiter/Indeed account for the helper; clean Windows/Mac/Linux machines for the installers; a residential-proxy provider for managed sessions.
+2. **Counsel review** of `/terms`, `/privacy`, `/compliance`; Google sensitive-scope verification.
+3. **Carlos's real recruiting logic**: scoring rubric, brief template, voice rules and classifier are our own implementation; the original ~13 skills and ~70 scripts were not available.
+4. **Deployment**: domain/DNS, production SMTP, secrets in a vault, hosting accounts (checklist in `docs/OPERATIONS.md`).
+5. **Business decisions**: solo / white-label prices, usage rates, trial length (all configuration).
+6. **Deliberate deviations from the scope document**: MySQL instead of Postgres (owner's instruction); not reusing CandidateGPT's auth, Stripe and design system because that repository was not provided.
+7. Not in the scope document, but expected of a real product: password reset and email verification.

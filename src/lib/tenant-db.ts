@@ -8,7 +8,7 @@ import { prisma } from "./db";
  */
 export const TENANT_MODELS = new Set([
   "Client", "JobOrder", "Candidate", "Contact", "Prospect", "Message", "DoNotContact",
-  "SavedSearch", "Run", "Interview", "Document", "ExecutorDevice", "Integration", "UsageEvent", "Invite",
+  "SavedSearch", "Run", "Interview", "Document", "ExecutorDevice", "Integration", "UsageEvent", "Invite", "JobMatch", "ExpertRequest",
 ]);
 
 const WHERE_OPS = new Set([

@@ -25,7 +25,8 @@ npm run db:push               # create tables
 npm run db:seed               # optional demo workspace: demo@recruitgpt.local / DemoPass-12345
 npm run dev                   # web on http://localhost:3009
 npm run worker                # in a second terminal: job queue + helper gateway on :8009 (backend)
-npm test                      # 32 tests (needs the DB)
+npm test                      # 46 tests (needs the DB)
+npm run build:helper          # rebuild the downloadable local helper bundle
 ```
 
 Generate secrets: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` (use for `ENCRYPTION_KEY` and `SESSION_SECRET`).
@@ -55,3 +56,4 @@ Everything works without third-party keys: with no `ANTHROPIC_API_KEY` scoring/b
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/OPERATIONS.md](docs/OPERATIONS.md): go-live checklist, secrets, backups, monitoring
 - [docs/LOCAL_HELPER.md](docs/LOCAL_HELPER.md)
+- [docs/PROPOSAL_ANSWERS.md](docs/PROPOSAL_ANSWERS.md): answers to the scope document's §10 questions

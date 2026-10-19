@@ -59,3 +59,16 @@ export async function searchCandidates(tenantId: string, query: string, limit = 
     ORDER BY relevance DESC, c.fitScore DESC
     LIMIT ${limit}`;
 }
+
+/** OR-style search: any term matches (used to pull a broad candidate pool for a role before scoring). */
+export async function searchCandidatesAny(tenantId: string, terms: string[], limit = 300): Promise<Array<Candidate & { relevance: number }>> {
+  const q = [...new Set(terms.map((t) => t.replace(/[^\p{L}\p{N}]/gu, "")).filter((t) => t.length > 2))].slice(0, 30).map((t) => `${t}*`).join(" ");
+  if (!q) return [];
+  return prisma.$queryRaw`
+    SELECT c.*, MATCH(fullName, headline, currentTitle, currentCompany, summary, skills) AGAINST (${q} IN BOOLEAN MODE) AS relevance
+    FROM Candidate c
+    WHERE c.tenantId = ${tenantId} AND c.status <> 'REJECTED'
+      AND MATCH(fullName, headline, currentTitle, currentCompany, summary, skills) AGAINST (${q} IN BOOLEAN MODE)
+    ORDER BY relevance DESC
+    LIMIT ${limit}`;
+}

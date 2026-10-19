@@ -14,12 +14,15 @@
 import { WebSocket } from "ws";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHALLENGE_PATTERNS, CloudToExecutor, hostAllowed } from "./protocol.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
+const RESTART_FOR_UPDATE = 75; // the run.cmd wrapper restarts the helper on this exit code
 const CFG_DIR = path.join(os.homedir(), ".recruitgpt");
 const CFG_FILE = path.join(CFG_DIR, "config.json");
 const PROFILE_DIR = path.join(CFG_DIR, "chrome-profile");
@@ -59,7 +62,13 @@ function launchChrome() {
   const exe = findChrome();
   if (!exe) throw new Error("Chrome not found. Set CHROME_PATH.");
   fs.mkdirSync(PROFILE_DIR, { recursive: true });
-  spawn(exe, [`--remote-debugging-port=${new URL(CDP).port}`, `--user-data-dir=${PROFILE_DIR}`, "--no-first-run", "https://www.linkedin.com/login"], { detached: true, stdio: "ignore" }).unref();
+  // Managed sessions (hosted helper): RGPT_PROXY routes the browser through a residential proxy; RGPT_NO_SANDBOX for containers.
+  const extra = [
+    ...(process.env.RGPT_PROXY ? [`--proxy-server=${process.env.RGPT_PROXY}`] : []),
+    ...(process.env.RGPT_NO_SANDBOX ? ["--no-sandbox", "--disable-dev-shm-usage"] : []),
+    ...(process.env.RGPT_REMOTE_DEBUGGING_ADDRESS ? [`--remote-debugging-address=${process.env.RGPT_REMOTE_DEBUGGING_ADDRESS}`] : []),
+  ];
+  spawn(exe, [`--remote-debugging-port=${new URL(CDP).port}`, `--user-data-dir=${PROFILE_DIR}`, "--no-first-run", ...extra, "https://www.linkedin.com/login"], { detached: true, stdio: "ignore" }).unref();
   log("Opened the dedicated RecruitGPT browser profile. Sign in to LinkedIn Recruiter / Indeed there, and leave it open.");
 }
 
@@ -136,11 +145,34 @@ async function execute(cmd: CloudToExecutor["action"]): Promise<unknown> {
   }
 }
 
+// ───────────── auto-update ─────────────
+/** Self-update from the paired server when running as the installed bundle (helper.mjs). Verifies sha256 before replacing. */
+async function checkForUpdate(cfg: Cfg) {
+  try {
+    const me = fileURLToPath(import.meta.url);
+    if (!me.endsWith("helper.mjs")) return; // running from source: never self-update
+    const base = cfg.server.replace(/\/$/, "");
+    const meta: any = await (await fetch(`${base}/helper/version.json`, { cache: "no-store" })).json();
+    if (!meta?.version || meta.version === VERSION || !/^[0-9a-f]{64}$/.test(meta.sha256 ?? "")) return;
+    const body = Buffer.from(await (await fetch(`${base}/helper/helper.mjs`, { cache: "no-store" })).arrayBuffer());
+    if (crypto.createHash("sha256").update(body).digest("hex") !== meta.sha256) { log("update rejected: checksum mismatch"); return; }
+    fs.writeFileSync(me + ".new", body);
+    fs.renameSync(me + ".new", me);
+    log(`updated ${VERSION} -> ${meta.version}; restarting`);
+    // let in-flight network handles close first; exiting immediately trips a libuv assertion on Windows
+    process.exitCode = RESTART_FOR_UPDATE;
+    setTimeout(() => process.exit(RESTART_FOR_UPDATE), 300);
+    await new Promise(() => {});
+  } catch { /* offline or no update available: keep running */ }
+}
+
 // ───────────── connection loop ─────────────
 async function run() {
   const cfg = loadCfg();
   if (!cfg) throw new Error("Not paired. Run: recruitgpt-helper pair <CODE> --server https://recruitgpt.ai");
   let backoff = 1000;
+  await checkForUpdate(cfg);
+  setInterval(() => checkForUpdate(cfg), 6 * 3600_000).unref();
   for (;;) {
     await new Promise<void>((resolve) => {
       const ws = new WebSocket(`${cfg.gateway}/executor?token=${encodeURIComponent(cfg.token)}`);
@@ -178,5 +210,6 @@ const flag = (n: string) => { const i = rest.indexOf(n); return i >= 0 ? rest[i 
   if (cmd === "pair") return pair(rest[0], flag("--server") ?? process.env.RGPT_SERVER ?? "https://recruitgpt.ai");
   if (cmd === "chrome") return launchChrome();
   if (cmd === "run") return run();
+  if (cmd === "version") return console.log(VERSION);
   console.log("RecruitGPT Local Helper\n  pair <CODE> [--server URL]   pair this computer with your workspace\n  chrome                        open the dedicated browser profile (sign in to LinkedIn/Indeed)\n  run                           connect and carry out browser actions for your workspace");
 })().catch((e) => { console.error("Error:", e.message); process.exit(1); });

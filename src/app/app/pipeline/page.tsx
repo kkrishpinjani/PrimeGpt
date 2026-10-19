@@ -18,13 +18,13 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
   return (
     <>
       <PageHeader title="Pipeline" subtitle="Where every candidate stands." actions={
-        <form method="get"><select name="job" defaultValue={job ?? ""} className="input" onChange={undefined}><option value="">All roles</option>{jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select><button className="btn btn-sm ml-2">Apply</button></form>
+        <form method="get" className="flex items-center gap-2"><select name="job" defaultValue={job ?? ""} className="input w-56"><option value="">All roles</option>{jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select><button className="btn">Apply</button></form>
       } />
-      <div className="grid gap-3 overflow-x-auto pb-2" style={{ gridTemplateColumns: `repeat(${COLS.length}, minmax(210px, 1fr))` }}>
+      <div className="grid gap-3 overflow-x-auto pb-2" style={{ gridTemplateColumns: `repeat(${COLS.length}, minmax(190px, 1fr))` }}>
         {COLS.map((col) => {
           const items = cands.filter((c) => c.status === col);
           return (
-            <section key={col} className="rounded-xl border border-line bg-panel/60 p-3">
+            <section key={col} className="rounded-xl border border-line bg-panel/70 p-3">
               <h2 className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-wide text-muted">{col.toLowerCase()}<span className="badge">{items.length}</span></h2>
               <ul className="space-y-2">
                 {items.map((c) => (

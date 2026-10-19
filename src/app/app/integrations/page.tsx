@@ -5,6 +5,7 @@ import { listConnected } from "@/lib/integrations/store";
 import { googleConfigured } from "@/lib/integrations/google";
 import { quoWebhookToken } from "@/lib/integrations/quo-token";
 import { createPairingCode, disconnect, revokeDevice, saveByoKey, saveQuo } from "../actions/settings";
+import { requestManagedSession } from "../actions/admin";
 
 export const metadata = { title: "Integrations" };
 
@@ -26,27 +27,61 @@ export default async function Integrations({ searchParams }: { searchParams: Pro
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="h2">Local helper (browser automation)</h2>
-            <p className="muted mt-1 max-w-2xl">A small app on your computer that drives your own signed-in LinkedIn Recruiter / Indeed browser, on your own connection. It only receives generic browser steps. See <code>docs/LOCAL_HELPER.md</code>.</p>
+            <p className="muted mt-1 max-w-2xl">A small app on your computer that drives your own signed-in LinkedIn Recruiter / Indeed browser, on your own connection. It only receives generic browser steps. The installer is one click: it sets everything up, starts with Windows and keeps itself updated. See <code>docs/LOCAL_HELPER.md</code>.</p>
           </div>
           {admin && (
-            <form action={createPairingCode} className="flex gap-2"><input name="label" placeholder="Label, e.g. Carlos laptop" className="input w-48" /><SubmitButton className="btn-primary">Get pairing code</SubmitButton></form>
+            <div className="flex flex-wrap items-center gap-2">
+              <a href="/api/executor/installer" className="btn btn-primary">Download Windows installer</a>
+              <a href="/api/executor/installer?os=mac" className="btn btn-sm">macOS</a>
+              <a href="/api/executor/installer?os=linux" className="btn btn-sm">Linux</a>
+              <form action={createPairingCode} className="flex gap-2"><input name="label" placeholder="Label (manual pairing)" className="input w-44" /><SubmitButton>Pairing code</SubmitButton></form>
+            </div>
           )}
         </div>
         {sp.code && (
           <div className="mt-4 rounded-lg border border-brand/40 bg-brand/5 p-4">
             <div className="muted text-xs">One-time code, valid 15 minutes</div>
             <div className="mt-1 font-mono text-3xl font-semibold tracking-widest">{sp.code}</div>
-            <pre className="mt-3 overflow-x-auto rounded bg-black/5 p-3 text-xs">{`recruitgpt-helper pair ${sp.code} --server ${appUrl}\nrecruitgpt-helper chrome   # sign in to LinkedIn / Indeed in that window\nrecruitgpt-helper run`}</pre>
+            <pre className="mt-3 overflow-x-auto rounded bg-black/30 p-3 text-xs">{`recruitgpt-helper pair ${sp.code} --server ${appUrl}\nrecruitgpt-helper chrome   # sign in to LinkedIn / Indeed in that window\nrecruitgpt-helper run`}</pre>
           </div>
         )}
-        <table className="tbl mt-4"><thead><tr><th>Device</th><th>Status</th><th>Last seen</th><th /></tr></thead><tbody>
-          {devices.length === 0 && <tr><td colSpan={4} className="muted">No devices yet.</td></tr>}
+        {(() => {
+          const paired = devices.some((d) => d.tokenHash);
+          const online = devices.some((d) => d.online);
+          const browser = devices.some((d) => d.online && d.browserConnected);
+          const steps: Array<[string, string, boolean]> = [
+            ["Download and run the installer", "One double-click on the computer that will run LinkedIn / Indeed", paired],
+            ["Helper is online", "It starts with Windows and reconnects by itself", online],
+            ["Browser window is open", "The dedicated RecruitGPT browser opened by the installer. Keep it open", browser],
+            ["Sign in to LinkedIn Recruiter / Indeed in that window", "Once. We never see your password. If a verification appears, complete it yourself", browser],
+            ["Run a test search", "Searches → New search → pick LinkedIn Recruiter", false],
+          ];
+          return (
+            <ol className="mt-4 grid gap-2 md:grid-cols-2" aria-label="Helper setup guide">
+              {steps.map(([t, h, ok], i) => (
+                <li key={t} className="flex items-start gap-3 rounded-xl border border-line p-3">
+                  <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs ${ok ? "bg-ok/20 text-ok" : "bg-white/10 text-muted"}`}>{ok ? "✓" : i + 1}</span>
+                  <span><span className="block text-sm font-medium">{t}</span><span className="muted text-xs">{h}</span></span>
+                </li>
+              ))}
+            </ol>
+          );
+        })()}
+        <table className="tbl mt-4"><thead><tr><th>Device</th><th>Helper</th><th>Browser</th><th>Last seen</th><th /></tr></thead><tbody>
+          {devices.length === 0 && <tr><td colSpan={5} className="muted">No devices yet.</td></tr>}
           {devices.map((d) => (
             <tr key={d.id}><td>{d.label}<div className="muted text-xs">{d.platformInfo}</div></td>
-              <td>{d.tokenHash ? <StatusBadge s={d.online ? "online" : "offline"} /> : <Badge tone="warn">awaiting pairing</Badge>}</td><td className="muted text-xs">{fmtDate(d.lastSeenAt)}</td>
+              <td>{d.tokenHash ? <StatusBadge s={d.online ? "online" : "offline"} /> : <Badge tone="warn">awaiting pairing</Badge>}</td><td>{d.tokenHash ? (d.online ? <Badge tone={d.browserConnected ? "ok" : "warn"}>{d.browserConnected ? "connected" : "not open"}</Badge> : <span className="muted text-xs">n/a</span>) : null}</td><td className="muted text-xs">{fmtDate(d.lastSeenAt)}</td>
               <td className="text-right">{admin && <form action={revokeDevice.bind(null, d.id)}><SubmitButton className="btn-sm" confirm="Revoke this device?">Revoke</SubmitButton></form>}</td></tr>
           ))}
         </tbody></table>
+      </section>
+
+      <section className="card mb-6">
+        <h2 className="h2">Cannot run the helper yourself?</h2>
+        <p className="muted mt-1 max-w-2xl">We can host a managed browser session for your workspace, on a residential connection. You sign in to LinkedIn / Indeed once through a remote browser view and we keep the session warm.</p>
+        {ctx.tenant.managedSessionRequested ? <p className="mt-3 text-sm text-ok">Requested. We will contact you to set it up.</p>
+          : admin ? <form action={requestManagedSession} className="mt-3"><SubmitButton>Request a managed session</SubmitButton></form> : <p className="muted mt-3 text-xs">Ask a workspace admin to request this.</p>}
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -63,7 +98,7 @@ export default async function Integrations({ searchParams }: { searchParams: Pro
           {admin && (has("quo") ? (
             <>
               <p className="muted text-xs">Inbound webhook (add in Quo, event <code>message.received</code>):</p>
-              <code className="mt-1 block break-all rounded bg-black/5 p-2 text-xs">{`${appUrl}/api/webhooks/quo/${quoWebhookToken(ctx.tenant.id)}`}</code>
+              <code className="mt-1 block break-all rounded bg-black/30 p-2 text-xs">{`${appUrl}/api/webhooks/quo/${quoWebhookToken(ctx.tenant.id)}`}</code>
               <form action={disconnect.bind(null, "quo")} className="mt-3"><SubmitButton className="btn-sm">Disconnect</SubmitButton></form>
             </>
           ) : (

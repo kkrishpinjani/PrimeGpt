@@ -22,6 +22,13 @@ model Tenant {
   // settings
   autonomyInboxWatch Boolean @default(false)   // scheduled behaviour is opt-in (decision: on-demand only at launch)
   autonomyFollowups  Boolean @default(false)
+  followupDays       Int     @default(3)    // days of silence before a follow-up DRAFT is created
+  maxFollowups       Int     @default(2)
+  passThroughUsage   Boolean @default(false) // bill AI/InMail usage on top of the subscription
+  lastUsageBilledMonth String?                // "YYYY-MM", makes usage billing idempotent
+  managedSessionRequested Boolean @default(false)
+  trialUsed          Boolean @default(false)
+  onboardingDismissed Boolean @default(false)
   aiMonthlyBudgetCents Int   @default(20000)    // cost control
   // billing (WS6)
   stripeCustomerId   String? @unique
@@ -49,6 +56,8 @@ model Tenant {
   audit         AuditLog[]
   prospects     Prospect[]
   invites       Invite[]
+  jobMatches    JobMatch[]
+  expertRequests ExpertRequest[]
 }
 
 enum TenantKind {
@@ -142,6 +151,7 @@ model JobOrder {
   searches  SavedSearch[]
   candidates Candidate[]
   interviews Interview[]
+  matches   JobMatch[]
   @@index([tenantId])
   @@index([clientId])
 }
@@ -178,6 +188,7 @@ model Candidate {
   run        Run?     @relation(fields: [runId], references: [id], onDelete: SetNull)
   messages   Message[]
   interviews Interview[]
+  matches    JobMatch[]
   @@unique([tenantId, source, sourceRef])
   @@index([tenantId, status])
   @@index([tenantId, jobOrderId])
@@ -337,6 +348,8 @@ enum RunType {
   BRIEF
   OUTREACH_DRAFT
   INBOX_WATCH
+  FOLLOWUP_DRAFT
+  MATCH_ROLE
   PROSPECTING
   SEND_MESSAGE
 }
@@ -395,11 +408,13 @@ model ExecutorDevice {
   id          String   @id @default(cuid())
   tenantId    String
   label       String   @default("My computer")
+  kind        String   @default("local")   // local | managed (hosted helper behind a residential proxy)
   pairingCode String?  @unique        // one-time, short-lived
   pairingExpires DateTime?
   tokenHash   String?  @unique        // sha256 of long-lived device token
   lastSeenAt  DateTime?
   online      Boolean  @default(false)
+  browserConnected Boolean @default(false)
   platformInfo String?
   createdAt   DateTime @default(now())
   revokedAt   DateTime?
@@ -458,4 +473,34 @@ model StripeEvent {
   id        String   @id        // stripe event id → idempotent webhooks
   type      String
   createdAt DateTime @default(now())
+}
+
+// Role ↔ talent-pool matching: one candidate can match many roles (Candidate.jobOrderId is only the "attached" role)
+model JobMatch {
+  id          String   @id @default(cuid())
+  tenantId    String
+  jobOrderId  String
+  candidateId String
+  score       Int
+  rationale   String?  @db.Text
+  breakdown   Json?
+  createdAt   DateTime @default(now())
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  jobOrder    JobOrder @relation(fields: [jobOrderId], references: [id], onDelete: Cascade)
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  @@unique([jobOrderId, candidateId])
+  @@index([tenantId, jobOrderId, score])
+}
+
+// Subscription is the funnel, human-led services are the upsell (scope §2)
+model ExpertRequest {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  kind      String   @default("talent_search")   // talent_search | coaching | other
+  message   String   @db.Text
+  status    String   @default("new")              // new | contacted | closed
+  createdAt DateTime @default(now())
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, status])
 }

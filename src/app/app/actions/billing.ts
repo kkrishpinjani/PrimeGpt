@@ -19,7 +19,7 @@ export async function startCheckout() {
     mode: "subscription",
     customer,
     client_reference_id: ctx.tenant.id,
-    line_items: checkoutLineItems(),
+    line_items: checkoutLineItems(ctx.tenant.kind),
     subscription_data: { metadata: { tenantId: ctx.tenant.id } },
     success_url: `${base}/app/billing?success=1`,
     cancel_url: `${base}/app/billing?canceled=1`,
@@ -36,6 +36,20 @@ export async function openPortal() {
     return_url: `${process.env.APP_URL}/app/billing`,
   });
   redirect(s.url);
+}
+
+/**
+ * Free trial (scope WS6 "trial/onboarding"). Length is a business decision, so it is configured by TRIAL_DAYS and
+ * the feature is off when unset/0. One trial per workspace; it ends on its date and access is gated like any other status.
+ */
+export async function startTrial() {
+  const ctx = await requireCtx({ minRole: "OWNER" });
+  const days = Number(process.env.TRIAL_DAYS ?? 0);
+  if (!(days > 0)) throw new Error("Trials are not offered");
+  if (ctx.tenant.trialUsed || ctx.tenant.subscriptionStatus !== "NONE") redirect("/app/billing?error=trial_unavailable");
+  await prisma.tenant.update({ where: { id: ctx.tenant.id }, data: { subscriptionStatus: "TRIALING", trialUsed: true, currentPeriodEnd: new Date(Date.now() + days * 86_400_000) } });
+  await audit("billing.trial_started", { tenantId: ctx.tenant.id, userId: ctx.user.id, detail: `${days}d` });
+  redirect("/app/billing?trial=1");
 }
 
 /** Local development only, and only when Stripe is not configured. Never available in production. */

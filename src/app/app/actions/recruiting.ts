@@ -12,7 +12,8 @@ import { getSecret } from "@/lib/integrations/store";
 
 const s = (f: FormData, k: string) => {
   const v = f.get(k);
-  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+  // pasted "<br>" tags (from chat/markdown tables) become real line breaks
+  return typeof v === "string" && v.trim() ? v.replace(/<br\s*\/?>/gi, "\n").trim() : undefined;
 };
 const num = (f: FormData, k: string) => {
   const v = s(f, k);
@@ -105,6 +106,25 @@ export async function requestBrief(id: string) {
   revalidatePath(`/app/candidates/${id}`);
 }
 
+export async function matchRole(jobOrderId: string) {
+  const ctx = await requireCtx({ minRole: "RECRUITER", needSubscription: true });
+  if (!(await ctx.db.jobOrder.findFirst({ where: { id: jobOrderId } }))) throw new Error("Role not found");
+  const run = await enqueueRun(ctx.tenant.id, "MATCH_ROLE", { jobOrderId }, { userId: ctx.user.id });
+  redirect(`/app/runs/${run.id}`);
+}
+
+/** Put a database match on the role's shortlist (a candidate has one attached role; matches can be many). */
+export async function attachMatch(matchId: string) {
+  const ctx = await requireCtx({ minRole: "RECRUITER" });
+  const m = await ctx.db.jobMatch.findFirst({ where: { id: matchId } });
+  if (!m) throw new Error("Match not found");
+  await ctx.db.candidate.updateMany({
+    where: { id: m.candidateId },
+    data: { jobOrderId: m.jobOrderId, fitScore: m.score, scoreRationale: m.rationale, ...(m.breakdown ? { scoreBreakdown: m.breakdown as any } : {}) },
+  });
+  revalidatePath(`/app/jobs/${m.jobOrderId}`);
+}
+
 export async function rescoreJob(jobOrderId: string) {
   const ctx = await requireCtx({ minRole: "RECRUITER", needSubscription: true });
   const run = await enqueueRun(ctx.tenant.id, "SCORING", { jobOrderId }, { userId: ctx.user.id });
@@ -193,7 +213,14 @@ export async function removeDnc(id: string) {
 export async function runProspecting(f: FormData) {
   const ctx = await requireCtx({ minRole: "RECRUITER", needSubscription: true });
   const list = (k: string) => (s(f, k) ?? "").split(/[\n,;]/).map((x) => x.trim()).filter(Boolean);
-  const run = await enqueueRun(ctx.tenant.id, "PROSPECTING", { titles: list("titles"), keywords: s(f, "keywords") ?? "", domains: list("domains"), locations: list("locations"), limit: num(f, "limit") ?? 25, userName: ctx.user.name }, { userId: ctx.user.id });
+  const mode = s(f, "mode") === "companies" ? "companies" : "people";
+  const run = await enqueueRun(ctx.tenant.id, "PROSPECTING", { mode, query: s(f, "query"), titles: list("titles"), keywords: s(f, "keywords") ?? "", domains: list("domains"), locations: list("locations"), limit: num(f, "limit") ?? 25, userName: ctx.user.name }, { userId: ctx.user.id });
+  redirect(`/app/runs/${run.id}`);
+}
+export async function enrichProspect(id: string) {
+  const ctx = await requireCtx({ minRole: "RECRUITER", needSubscription: true });
+  if (!(await ctx.db.prospect.findFirst({ where: { id } }))) throw new Error("Prospect not found");
+  const run = await enqueueRun(ctx.tenant.id, "PROSPECTING", { mode: "enrich", prospectId: id, userName: ctx.user.name }, { userId: ctx.user.id });
   redirect(`/app/runs/${run.id}`);
 }
 export async function setProspectStatus(id: string, status: string) {

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { generateBrief } from "@/lib/brain/brief";
 import { DncError, draftOutreach } from "@/lib/brain/outreach";
 import { draftProspectIntro } from "@/lib/brain/prospect";
-import { apolloPeople } from "@/lib/integrations/data-sources";
+import { apolloPeople, exaSearch } from "@/lib/integrations/data-sources";
 import { scoreAndSave } from "@/lib/services/candidates";
 import { runEvent } from "@/lib/services/runs";
 
@@ -59,24 +59,69 @@ export async function runOutreachDraft(run: Run) {
   return `Drafted ${made} messages (${skipped} skipped). Review and approve them in Outreach.`;
 }
 
+type ProspectParams = {
+  mode?: "people" | "companies" | "enrich";
+  titles?: string[]; keywords?: string; domains?: string[]; locations?: string[]; limit?: number; query?: string; prospectId?: string; userName: string;
+};
+const DEFAULT_BUYER_TITLES = ["Chief People Officer", "VP Human Resources", "Head of Talent Acquisition", "Chief Executive Officer", "President"];
+const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return undefined; } };
+const companyFromTitle = (t: string, host?: string) => (t.split(/\s[-|:–—]\s/)[0] || host || "").trim().slice(0, 190);
+
+/** Client acquisition (scope §3.2): find people (Apollo), find companies (web search), then enrich companies with a decision maker. */
 export async function runProspecting(run: Run) {
-  const p = run.params as { titles: string[]; keywords?: string; domains?: string[]; locations?: string[]; limit?: number; userName: string };
+  const p = run.params as ProspectParams;
   const tenant = await prisma.tenant.findUniqueOrThrow({ where: { id: run.tenantId } });
-  const people = await apolloPeople(run.tenantId, { titles: p.titles, keywords: p.keywords, companyDomains: p.domains, locations: p.locations, limit: p.limit ?? 25 });
+  const mode = p.mode ?? "people";
+
+  const addContactAndDraft = async (pr: { id: string; company: string; domain: string | null; contactName: string | null; contactTitle: string | null; contactEmail: string | null; linkedinUrl: string | null; rationale: string | null }) => {
+    const intro = await draftProspectIntro(tenant, p.userName, pr as any);
+    await prisma.prospect.update({ where: { id: pr.id }, data: { rationale: pr.rationale ?? intro.rationale } });
+    if (!pr.contactEmail) return;
+    // A Contact gives the message a recipient, so the normal approve → send pipeline (DNC, caps) applies.
+    const existing = await prisma.contact.findFirst({ where: { tenantId: run.tenantId, email: pr.contactEmail } });
+    const contact = existing ?? (await prisma.contact.create({ data: { tenantId: run.tenantId, fullName: pr.contactName ?? "Unknown", title: pr.contactTitle, email: pr.contactEmail, linkedinUrl: pr.linkedinUrl, source: "apollo" } }));
+    await prisma.message.create({ data: { tenantId: run.tenantId, contactId: contact.id, channel: "EMAIL", direction: "OUTBOUND", status: "DRAFT", kind: "outreach", subject: intro.subject, body: intro.body, threadKey: `prospect:${pr.id}` } });
+  };
+
+  if (mode === "companies") {
+    const q = p.query?.trim() || `${p.keywords ?? ""} companies ${(p.locations ?? []).join(" ")} hiring leadership roles`.trim();
+    const results = await exaSearch(run.tenantId, q, Math.min(p.limit ?? 20, 50));
+    let n = 0;
+    for (const r of results) {
+      const domain = hostOf(r.url);
+      const company = companyFromTitle(r.title, domain);
+      if (!company || !domain) continue;
+      if (await prisma.prospect.findFirst({ where: { tenantId: run.tenantId, OR: [{ domain }, { company }] } })) continue;
+      await prisma.prospect.create({ data: { tenantId: run.tenantId, company, domain, rationale: r.text.replace(/\s+/g, " ").slice(0, 280) || null } });
+      n++;
+    }
+    return `Found ${n} new companies from web search. Use "Find contact" on each to enrich it with a decision maker.`;
+  }
+
+  if (mode === "enrich") {
+    const pr = await prisma.prospect.findFirst({ where: { id: p.prospectId, tenantId: run.tenantId } });
+    if (!pr) throw new Error("Prospect not found");
+    if (!pr.domain) throw new Error("Prospect has no domain to search");
+    const people = await apolloPeople(run.tenantId, { titles: p.titles?.length ? p.titles : DEFAULT_BUYER_TITLES, companyDomains: [pr.domain], limit: 3 });
+    const best = people.find((x) => x.email) ?? people[0];
+    if (!best) return `No decision maker found at ${pr.company}.`;
+    const updated = await prisma.prospect.update({
+      where: { id: pr.id },
+      data: { contactName: best.fullName, contactTitle: best.title, contactEmail: best.email, linkedinUrl: best.linkedinUrl },
+    });
+    await addContactAndDraft(updated);
+    return `Enriched ${pr.company}: ${best.fullName}${best.title ? `, ${best.title}` : ""}${best.email ? " (intro draft ready in Outreach)" : " (no email available)"}.`;
+  }
+
+  const people = await apolloPeople(run.tenantId, { titles: p.titles ?? [], keywords: p.keywords, companyDomains: p.domains, locations: p.locations, limit: p.limit ?? 25 });
   let n = 0;
   for (const x of people) {
-    const exists = await prisma.prospect.findFirst({ where: { tenantId: run.tenantId, company: x.company ?? "", contactName: x.fullName } });
-    if (exists || !x.company) continue;
+    if (!x.company) continue;
+    if (await prisma.prospect.findFirst({ where: { tenantId: run.tenantId, company: x.company, contactName: x.fullName } })) continue;
     const pr = await prisma.prospect.create({
       data: { tenantId: run.tenantId, company: x.company, domain: x.domain, contactName: x.fullName, contactTitle: x.title, contactEmail: x.email, linkedinUrl: x.linkedinUrl },
     });
-    const intro = await draftProspectIntro(tenant, p.userName, pr);
-    await prisma.prospect.update({ where: { id: pr.id }, data: { rationale: intro.rationale } });
-    if (x.email) {
-      // A Contact gives the message a recipient, so the normal approve → send pipeline (DNC, caps) applies.
-      const contact = await prisma.contact.create({ data: { tenantId: run.tenantId, fullName: x.fullName, title: x.title, email: x.email, linkedinUrl: x.linkedinUrl, source: "apollo" } });
-      await prisma.message.create({ data: { tenantId: run.tenantId, contactId: contact.id, channel: "EMAIL", direction: "OUTBOUND", status: "DRAFT", kind: "outreach", subject: intro.subject, body: intro.body, threadKey: `prospect:${pr.id}` } });
-    }
+    await addContactAndDraft(pr);
     n++;
   }
   return `Added ${n} prospects with draft intros`;

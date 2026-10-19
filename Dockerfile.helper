@@ -1,0 +1,23 @@
+# Managed residential session: the SAME local helper, hosted for tenants who cannot run it themselves.
+# The customer signs in to LinkedIn/Indeed ONCE through a remote browser view (noVNC on :6080), then the helper keeps the session warm.
+# Egress goes through a residential proxy (RGPT_PROXY=http://user:pass@host:port). One container per tenant.
+#
+#   docker build -f Dockerfile.helper -t recruitgpt-managed-helper .
+#   docker run -d --name helper-<tenant> -p 127.0.0.1:6080:6080 \
+#     -e RGPT_SERVER=https://recruitgpt.ai -e RGPT_PAIR_CODE=<code from Admin> \
+#     -e RGPT_PROXY=http://user:pass@residential.example:8000 \
+#     -v helper-<tenant>:/data recruitgpt-managed-helper
+#
+# NOTE: unverified in CI; validate with a real provider + licensed account before offering this to customers.
+FROM node:22-slim
+RUN apt-get update && apt-get install -y --no-install-recommends chromium xvfb x11vnc novnc websockify ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY public/helper/helper.mjs ./helper.mjs
+RUN echo '{"name":"helper","private":true}' > package.json && npm install playwright-core --no-audit --no-fund --silent
+ENV HOME=/data CHROME_PATH=/usr/bin/chromium RGPT_NO_SANDBOX=1 DISPLAY=:99 RGPT_SERVER=https://recruitgpt.ai
+VOLUME /data
+EXPOSE 6080
+COPY docker/managed-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+CMD ["/entrypoint.sh"]

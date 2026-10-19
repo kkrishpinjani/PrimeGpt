@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireCtx } from "@/lib/auth";
 import { Badge, Empty, fmtDate, Notice, PageHeader, StatusBadge } from "@/components/ui";
 import { SubmitButton } from "@/components/submit-button";
-import { approveAndSend, bulkDraft, discardDraft, draftFollowup, runInboxNow, updateDraft } from "../actions/outreach";
+import { approveAndSend, bulkDraft, discardDraft, draftFollowup, runFollowupsNow, runInboxNow, updateDraft } from "../actions/outreach";
 
 export const metadata = { title: "Outreach" };
 
@@ -19,11 +19,11 @@ export default async function Outreach({ searchParams }: { searchParams: Promise
   ]);
   const tabs: Array<[string, string, number]> = [["approve", "Awaiting approval", drafts.length], ["sent", "Sent", sent.length], ["replies", "Replies", replies.length]];
   const who = (m: (typeof drafts)[number]) => m.candidate?.fullName ?? m.contact?.fullName ?? "Unknown";
-  const whoHref = (m: (typeof drafts)[number]) => (m.candidateId ? `/app/candidates/${m.candidateId}` : "#");
+  const whoHref = (m: (typeof drafts)[number]) => (m.candidateId ? `/app/candidates/${m.candidateId}` : m.contactId ? `/app/contacts/${m.contactId}` : "#");
 
   return (
     <>
-      <PageHeader title="Outreach" subtitle="Draft → approve → send. Nothing leaves without a recruiter approving it." actions={ctx.canWrite && <form action={runInboxNow}><SubmitButton>Check inbox now</SubmitButton></form>} />
+      <PageHeader title="Outreach" subtitle="Draft → approve → send. Nothing leaves without a recruiter approving it." actions={ctx.canWrite && <><form action={runFollowupsNow}><SubmitButton>Draft follow-ups now</SubmitButton></form><form action={runInboxNow}><SubmitButton>Check inbox now</SubmitButton></form></>} />
       {error && <Notice tone="bad">{error}</Notice>}
       {sending > 0 && <Notice tone="info">{sending} message(s) approved and sending.</Notice>}
 

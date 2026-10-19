@@ -53,7 +53,8 @@ export function LiveRun({ runId, initial }: { runId: string; initial: RunView })
         </ol>
       </div>
       {run.status === "SUCCEEDED" && run.type === "SOURCING" && <Link href="/app/candidates" className="btn btn-primary">Review candidates</Link>}
-      {run.status === "SUCCEEDED" && run.type === "OUTREACH_DRAFT" && <Link href="/app/outreach" className="btn btn-primary">Review drafts</Link>}
+      {run.status === "SUCCEEDED" && (run.type === "OUTREACH_DRAFT" || run.type === "FOLLOWUP_DRAFT") && <Link href="/app/outreach" className="btn btn-primary">Review drafts</Link>}
+      {run.status === "SUCCEEDED" && run.type === "MATCH_ROLE" && <Link href="/app/jobs" className="btn btn-primary">Back to roles</Link>}
       {run.status === "SUCCEEDED" && run.type === "PROSPECTING" && <Link href="/app/prospects" className="btn btn-primary">View prospects</Link>}
     </div>
   );

@@ -9,7 +9,7 @@ import { importCsv, setCandidateStatus } from "../actions/recruiting";
 export const metadata = { title: "Candidates" };
 const STATUSES = ["NEW", "SAVED", "REJECTED", "CONTACTED", "REPLIED", "INTERVIEWING", "PLACED"] as const;
 
-export default async function Candidates({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; job?: string; min?: string; imported?: string; updated?: string }> }) {
+export default async function Candidates({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; job?: string; min?: string; imported?: string; updated?: string; deleted?: string }> }) {
   const ctx = await requireCtx();
   const sp = await searchParams;
   const jobs = await ctx.db.jobOrder.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
@@ -29,8 +29,9 @@ export default async function Candidates({ searchParams }: { searchParams: Promi
       <PageHeader
         title="Candidates"
         subtitle="Full-text search across names, titles, companies, skills and summaries."
-        actions={ctx.canWrite && <Link href="/app/candidates/new" className="btn btn-primary">Add candidate</Link>}
+        actions={<><a href="/api/export/candidates" className="btn">Export CSV</a>{ctx.canWrite && <Link href="/app/candidates/new" className="btn btn-primary">Add candidate</Link>}</>}
       />
+      {sp.deleted && <Notice tone="ok">Candidate erased.</Notice>}
       {sp.imported && <Notice tone="ok">Imported {sp.imported} new candidates ({sp.updated} updated).</Notice>}
 
       <form className="card mb-4 grid gap-3 sm:grid-cols-[2fr_1fr_1fr_100px_auto]" method="get">

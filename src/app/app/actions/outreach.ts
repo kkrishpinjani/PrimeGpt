@@ -85,6 +85,12 @@ export async function draftFollowup(messageId: string) {
   redirect(`/app/outreach?focus=${m.id}`);
 }
 
+export async function runFollowupsNow() {
+  const ctx = await requireCtx({ minRole: "RECRUITER", needSubscription: true });
+  const run = await enqueueRun(ctx.tenant.id, "FOLLOWUP_DRAFT", { userName: ctx.user.name }, { userId: ctx.user.id });
+  redirect(`/app/runs/${run.id}`);
+}
+
 export async function runInboxNow() {
   const ctx = await requireCtx({ minRole: "RECRUITER", needSubscription: true });
   const run = await enqueueRun(ctx.tenant.id, "INBOX_WATCH", {}, { userId: ctx.user.id });

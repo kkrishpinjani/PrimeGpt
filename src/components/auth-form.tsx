@@ -3,10 +3,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export function AuthForm({ mode, inviteToken, inviteEmail }: { mode: "login" | "signup"; inviteToken?: string; inviteEmail?: string }) {
+export function AuthForm({ mode, inviteToken, inviteEmail, demo }: { mode: "login" | "signup"; inviteToken?: string; inviteEmail?: string; demo?: { email: string; password: string } }) {
   const router = useRouter();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [email, setEmail] = useState(inviteEmail ?? "");
+  const [password, setPassword] = useState("");
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -29,16 +31,29 @@ export function AuthForm({ mode, inviteToken, inviteEmail }: { mode: "login" | "
         <>
           <div><label className="label">Your name</label><input name="name" required className="input" autoComplete="name" /></div>
           {!inviteToken && <div><label className="label">Company / firm</label><input name="company" required className="input" autoComplete="organization" /></div>}
+          {!inviteToken && (
+            <div><label className="label">Account type</label>
+              <select name="accountType" defaultValue="STANDARD" className="input">
+                <option value="STANDARD">Employer / hiring team</option>
+                <option value="SOLO">Solo recruiter</option>
+                <option value="WHITELABEL">Search firm (white-label)</option>
+              </select></div>
+          )}
           {inviteToken && <input type="hidden" name="company" value="invited" />}
         </>
       )}
-      <div><label className="label">Email</label><input name="email" type="email" required defaultValue={inviteEmail} className="input" autoComplete="email" /></div>
+      <div><label className="label">Email</label><input name="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="input" autoComplete="email" /></div>
       <div>
         <label className="label">Password{mode === "signup" && " (10+ characters)"}</label>
-        <input name="password" type="password" required minLength={mode === "signup" ? 10 : 1} className="input" autoComplete={mode === "login" ? "current-password" : "new-password"} />
+        <input name="password" type="password" required minLength={mode === "signup" ? 10 : 1} value={password} onChange={(e) => setPassword(e.target.value)} className="input" autoComplete={mode === "login" ? "current-password" : "new-password"} />
       </div>
       {err && <p className="text-sm text-bad" role="alert">{err}</p>}
       <button className="btn btn-primary w-full" disabled={busy}>{busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}</button>
+      {mode === "login" && demo && (
+        <button type="button" className="btn w-full" onClick={() => { setEmail(demo.email); setPassword(demo.password); setErr(""); }}>
+          Use demo account
+        </button>
+      )}
       <p className="muted text-center">
         {mode === "login" ? <>New here? <Link href="/signup" className="underline">Create an account</Link></> : <>Have an account? <Link href="/login" className="underline">Sign in</Link></>}
       </p>

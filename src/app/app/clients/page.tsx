@@ -17,7 +17,7 @@ export default async function Clients() {
           {clients.length === 0 ? <Empty title="No clients yet" /> : (
             <div className="card overflow-x-auto p-0"><table className="tbl"><thead><tr><th>Client</th><th>Industry</th><th>Open roles</th><th>Contacts</th></tr></thead><tbody>
               {clients.map((c) => (
-                <tr key={c.id}><td><div className="font-medium">{c.name}</div>{c.website && <a href={c.website} target="_blank" rel="noreferrer" className="muted text-xs underline">{c.website}</a>}</td><td>{c.industry}</td>
+                <tr key={c.id}><td><Link href={`/app/clients/${c.id}`} className="font-medium hover:underline">{c.name}</Link>{c.website && <a href={c.website} target="_blank" rel="noreferrer" className="muted text-xs underline">{c.website}</a>}</td><td>{c.industry}</td>
                   <td>{c.jobOrders.filter((j) => j.status === "open").map((j) => <div key={j.id}><Link href={`/app/jobs/${j.id}`} className="underline">{j.title}</Link></div>)}</td><td>{c.contacts.length}</td></tr>
               ))}
             </tbody></table></div>

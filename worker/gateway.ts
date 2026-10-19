@@ -48,10 +48,10 @@ export function startGateway(port: number) {
       conn.lastSeen = Date.now();
       if (msg.type === "hello") {
         conn.browserConnected = msg.browserConnected;
-        await prisma.executorDevice.update({ where: { id: dev.id }, data: { platformInfo: `${msg.platform} v${msg.version}`.slice(0, 190) } });
+        await prisma.executorDevice.update({ where: { id: dev.id }, data: { platformInfo: `${msg.platform} v${msg.version}`.slice(0, 190), browserConnected: msg.browserConnected } });
       } else if (msg.type === "heartbeat") {
         conn.browserConnected = msg.browserConnected;
-        await prisma.executorDevice.update({ where: { id: dev.id }, data: { lastSeenAt: new Date() } }).catch(() => {});
+        await prisma.executorDevice.update({ where: { id: dev.id }, data: { lastSeenAt: new Date(), browserConnected: msg.browserConnected } }).catch(() => {});
       } else if (msg.type === "result") {
         const p = pending.get(msg.id);
         if (!p || p.tenantId !== dev.tenantId) return; // a device can only answer its own tenant's commands
@@ -66,7 +66,7 @@ export function startGateway(port: number) {
       if (!auth) return;
       const { dev, conn } = auth;
       if (conns.get(dev.tenantId) === conn) conns.delete(dev.tenantId);
-      await prisma.executorDevice.update({ where: { id: dev.id }, data: { online: false } }).catch(() => {});
+      await prisma.executorDevice.update({ where: { id: dev.id }, data: { online: false, browserConnected: false } }).catch(() => {});
       console.log(`[gateway] device ${dev.id} offline`);
     });
   });
@@ -75,6 +75,14 @@ export function startGateway(port: number) {
   setInterval(() => {
     for (const [tid, c] of conns) if (Date.now() - c.lastSeen > 60_000) { c.ws.terminate(); conns.delete(tid); }
   }, 15_000).unref();
+
+  // The HTTP server is shared (for /health), so closing the gateway must close it too.
+  const closeWss = wss.close.bind(wss);
+  wss.close = ((cb?: (err?: Error) => void) => {
+    for (const c of wss.clients) c.terminate();
+    closeWss(() => http.close(() => cb?.()));
+    http.closeAllConnections?.();
+  }) as typeof wss.close;
 
   console.log(`[gateway] listening on :${port}/executor`);
   return wss;

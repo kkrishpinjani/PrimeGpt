@@ -6,12 +6,15 @@
     "dev": "next dev -p 3009",
     "build": "prisma generate && next build",
     "start": "next start -p 3009",
+    "serve": "npm run build && next start -p 3009",
     "typecheck": "tsc --noEmit",
+    "build:helper": "node scripts/build-helper.mjs",
     "db:push": "prisma db push",
     "db:seed": "node --env-file=.env --import tsx prisma/seed.ts",
     "worker": "node --env-file=.env --import tsx worker/index.ts",
     "test": "node --env-file=.env --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "import:sqlite": "node --env-file=.env --import tsx scripts/import-sqlite.ts",
+    "make-admin": "node --env-file=.env --import tsx scripts/make-admin.ts",
     "backup": "node --env-file=.env --import tsx scripts/backup.ts"
   },
   "dependencies": {

@@ -20,7 +20,7 @@ const STOP = new Set([
 /** Prefix stemmer so "implementation" matches "implemented" and "integration" matches "integrated". */
 const stem = (w: string) => (w.length > 6 ? w.slice(0, 6) : w.replace(/s$/, ""));
 /** Hyphens/slashes split ("PE-backed" → pe, backed; "S/4HANA" → 4hana); "&" is kept so "M&A" survives. */
-const tokens = (s: string) =>
+export const tokens = (s: string) =>
   s.toLowerCase().replace(/[-/_]/g, " ").split(/[^a-z0-9&+#]+/)
     .map((w) => w.replace(/^&+|&+$/g, ""))
     .filter((w) => (w.length > 2 || w.includes("&") || w === "pe" || /\d/.test(w)) && !STOP.has(w))

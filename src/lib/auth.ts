@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
@@ -6,6 +7,7 @@ import type { Role } from "@prisma/client";
 import { prisma } from "./db";
 import { tdb } from "./tenant-db";
 import { hasActiveAccess } from "./billing-gate";
+import { allow } from "./memory-ratelimit";
 
 const COOKIE = "rgpt_session";
 const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET ?? "");
@@ -43,7 +45,8 @@ export async function clientIp() {
 }
 
 /** Resolve the signed-in user + active tenant. Membership is re-verified on every request. */
-export async function getContext() {
+/** Cached per request: the layout and the page share one session/membership lookup. */
+export const getContext = cache(async () => {
   const s = await readSession();
   if (!s) return null;
   const m = await prisma.membership.findUnique({
@@ -58,12 +61,14 @@ export async function getContext() {
     isAdmin: ROLE_RANK[m.role] >= ROLE_RANK.ADMIN,
     active: hasActiveAccess(m.tenant),
   };
-}
+});
 export type Ctx = NonNullable<Awaited<ReturnType<typeof getContext>>>;
 
 export async function requireCtx(opts: { minRole?: Role; needSubscription?: boolean } = {}): Promise<Ctx> {
   const ctx = await getContext();
   if (!ctx) redirect("/login");
+  // per-user limit: ~20 requests/second sustained is far beyond a person and well below a runaway script
+  if (!allow(`user:${ctx.user.id}`, 1500, 60_000)) throw new Error("Too many requests. Please wait a moment.");
   if (opts.minRole && ROLE_RANK[ctx.role] < ROLE_RANK[opts.minRole]) redirect("/app?denied=1");
   if (opts.needSubscription && !ctx.active) redirect("/app/billing?required=1");
   return ctx;
@@ -74,6 +79,7 @@ export class HttpError extends Error { constructor(public status: number, msg: s
 export async function apiCtx(opts: { minRole?: Role; needSubscription?: boolean } = {}): Promise<Ctx> {
   const ctx = await getContext();
   if (!ctx) throw new HttpError(401, "Not signed in");
+  if (!allow(`user:${ctx.user.id}`, 1500, 60_000)) throw new HttpError(429, "Too many requests");
   if (opts.minRole && ROLE_RANK[ctx.role] < ROLE_RANK[opts.minRole]) throw new HttpError(403, "Insufficient role");
   if (opts.needSubscription && !ctx.active) throw new HttpError(402, "Active subscription required");
   return ctx;

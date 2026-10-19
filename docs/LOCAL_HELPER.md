@@ -2,16 +2,20 @@
 
 A small app on the customer's computer. It drives **their own signed-in Chrome**, on **their own connection**, for LinkedIn Recruiter / Indeed. It holds no recruiting logic.
 
-## Install (customer)
+## Install (customer): one click
 
-1. In RecruitGPT: **Integrations → Local helper → Get pairing code** (valid 15 min, single use).
-2. On the computer (Windows): from the `executor/` folder run
-   `.\install.ps1 -Code ABCD-1234 -Server https://recruitgpt.ai`
-   (installs, pairs, and registers a Scheduled Task that starts at sign-in).
-3. `npx tsx src/index.ts chrome` opens a **dedicated Chrome profile** (`~/.recruitgpt/chrome-profile`, remote-debugging on `127.0.0.1:9222`). Sign in to LinkedIn Recruiter and/or Indeed there once. Leave it open.
-4. The Integrations page shows the device **online**. Searches that include LinkedIn/Indeed now work.
+1. In RecruitGPT: **Integrations → Local helper → Download Windows installer** (a workspace admin does this).
+2. Double-click `RecruitGPT-Helper-Setup.cmd` on the computer that will run LinkedIn/Indeed. It installs Node.js if missing (via winget), downloads the helper, pairs it using a single-use code embedded in the file (valid 1 hour), registers it to start at Windows sign-in, and opens the dedicated browser window.
+3. In that window, sign in to LinkedIn Recruiter and/or Indeed once. Leave it open.
+4. The Integrations page shows the device **online**.
 
-Manual: `pair <CODE> --server URL` · `chrome` · `run`.
+The helper **updates itself**: every 6 hours (and on start) it compares `/helper/version.json` to its version, downloads the new bundle, verifies its SHA-256, replaces itself and restarts. Publish a new version with `npm run build:helper` and redeploy.
+
+Manual / developer use: `pair <CODE> --server URL` · `chrome` · `run` · `version`.
+
+## Managed sessions (customers who cannot run the helper)
+
+A workspace admin clicks **Request a managed session**. A platform operator then opens **Platform admin → Provision managed**, which creates a managed device and shows a single-use code. Run the hosted helper (`Dockerfile.helper`) with `RGPT_PAIR_CODE=<code>` and `RGPT_PROXY=<residential proxy>`. The customer signs in to LinkedIn/Indeed once through the container's remote browser view (noVNC on port 6080). Same protocol, same safety rails. **Unverified**: needs a residential proxy provider and a licensed account to validate, and terms-of-service review for hosted use.
 
 ## What it does and does not do
 
@@ -20,10 +24,6 @@ Manual: `pair <CODE> --server URL` · `chrome` · `run`.
 - Paces itself like a person; hard local rate limits.
 - **Never solves or bypasses CAPTCHAs/verifications**: reports them; the cloud pauses the run and asks the user.
 - Stores nothing but the device token (`~/.recruitgpt/config.json`, mode 600). Does not read or store LinkedIn/Indeed passwords.
-
-## Packaging for non-technical customers (next step)
-
-Today it is a Node package + PowerShell installer. For GA, wrap `executor/` as a signed installer (Electron tray app or Node SEA + MSI/pkg) with an auto-updater; the protocol and pairing are already final. Evaluate **managed residential sessions** for tenants who cannot self-host: same protocol, helper runs on provider infrastructure.
 
 ## Risks to validate before scaling (scope §8)
 

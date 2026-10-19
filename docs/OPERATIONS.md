@@ -10,7 +10,7 @@
 
 ## Environment variables
 
-See `.env.example`. Required: `DATABASE_URL`, `APP_URL`, `SESSION_SECRET`, `ENCRYPTION_KEY` (32-byte hex; **losing it makes stored integration secrets unreadable**; back it up in a secrets manager), `GATEWAY_PUBLIC_URL`, `GATEWAY_PORT`. Feature keys: `ANTHROPIC_API_KEY`, `STRIPE_*`, `GOOGLE_CLIENT_ID/SECRET`, `APOLLO_API_KEY`, `EXA_API_KEY`, `SENTRY_DSN`, `CRON_SECRET`, `PARTNER_SHARED_SECRET`. Web and worker must share `DATABASE_URL`, `ENCRYPTION_KEY`, `ANTHROPIC_API_KEY`, integration keys.
+See `.env.example`. Required: `DATABASE_URL`, `APP_URL`, `SESSION_SECRET`, `ENCRYPTION_KEY` (32-byte hex; **losing it makes stored integration secrets unreadable**; back it up in a secrets manager), `GATEWAY_PUBLIC_URL`, `GATEWAY_PORT`. Plan and billing: `PRICE_SOLO_SETUP_CENTS`, `PRICE_SOLO_MONTHLY_CENTS`, `PRICE_WHITELABEL_SETUP_CENTS`, `PRICE_WHITELABEL_MONTHLY_CENTS` (unset = "Let's talk"); usage pass-through rates `USAGE_AI_MARKUP`, `USAGE_INMAIL_CENTS`, `USAGE_SMS_CENTS`, `USAGE_EMAIL_CENTS`, `USAGE_RUN_CENTS`. Feature keys: `ANTHROPIC_API_KEY`, `STRIPE_*`, `GOOGLE_CLIENT_ID/SECRET`, `APOLLO_API_KEY`, `EXA_API_KEY`, `SENTRY_DSN`, `CRON_SECRET`, `PARTNER_SHARED_SECRET`. Web and worker must share `DATABASE_URL`, `ENCRYPTION_KEY`, `ANTHROPIC_API_KEY`, integration keys.
 
 ## Go-live checklist
 
@@ -26,6 +26,14 @@ See `.env.example`. Required: `DATABASE_URL`, `APP_URL`, `SESSION_SECRET`, `ENCR
 - [ ] Counsel review of `/terms`, `/privacy`, `/compliance`.
 - [ ] Run `npm test` against a staging DB (isolation + approval gates must pass).
 - [ ] Validate the local helper against live LinkedIn/Indeed (see LOCAL_HELPER.md) before onboarding external customers.
+
+## Releasing a helper update
+
+`npm run build:helper` rebuilds `public/helper/helper.mjs` and `version.json` (bump `VERSION` in `executor/src/index.ts` first). Deploy the web app; installed helpers update themselves within 6 hours.
+
+## Platform operators
+
+`npm run make-admin -- you@company.com` grants access to **Platform admin** (all workspaces, plan changes, usage billing switch, managed-session provisioning).
 
 ## Monitoring
 

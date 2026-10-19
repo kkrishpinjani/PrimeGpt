@@ -7,6 +7,8 @@ import { startGateway } from "./gateway";
 import { runSourcing } from "./jobs/sourcing";
 import { runSend } from "./jobs/send";
 import { runInboxWatch } from "./jobs/inbox";
+import { runFollowupDraft } from "./jobs/followups";
+import { runMatchRole } from "./jobs/match";
 import { runBrief, runOutreachDraft, runProspecting, runScoring } from "./jobs/misc";
 
 /**
@@ -24,6 +26,8 @@ const handlers: Record<string, (r: Run) => Promise<string>> = {
   BRIEF: runBrief,
   OUTREACH_DRAFT: runOutreachDraft,
   INBOX_WATCH: runInboxWatch,
+  FOLLOWUP_DRAFT: runFollowupDraft,
+  MATCH_ROLE: runMatchRole,
   PROSPECTING: runProspecting,
   SEND_MESSAGE: runSend,
 };
@@ -93,6 +97,13 @@ async function scheduleAutonomy() {
     const open = await prisma.run.findFirst({ where: { tenantId: t.id, type: "INBOX_WATCH", status: { in: ["QUEUED", "RUNNING"] } } });
     const recent = await prisma.run.findFirst({ where: { tenantId: t.id, type: "INBOX_WATCH", createdAt: { gt: new Date(Date.now() - 10 * 60_000) } } });
     if (!open && !recent) await prisma.run.create({ data: { tenantId: t.id, type: "INBOX_WATCH", params: {} } });
+  }
+  // Follow-up drafts: at most one run per 12h per opted-in workspace
+  const fu = await prisma.tenant.findMany({ where: { autonomyFollowups: true } });
+  for (const t of fu) {
+    if (!hasActiveAccess(t)) continue;
+    const recent = await prisma.run.findFirst({ where: { tenantId: t.id, type: "FOLLOWUP_DRAFT", createdAt: { gt: new Date(Date.now() - 12 * 3600_000) } } });
+    if (!recent) await prisma.run.create({ data: { tenantId: t.id, type: "FOLLOWUP_DRAFT", params: {} } });
   }
 }
 

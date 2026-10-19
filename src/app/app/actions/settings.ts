@@ -26,11 +26,20 @@ export async function updateWorkspace(f: FormData) {
       brandColor: color && /^#[0-9a-fA-F]{6}$/.test(color) ? color : null,
       brandLogoUrl: s(f, "brandLogoUrl")?.startsWith("https://") ? s(f, "brandLogoUrl") : null,
       autonomyInboxWatch: f.get("autonomyInboxWatch") === "on",
+      autonomyFollowups: f.get("autonomyFollowups") === "on",
+      followupDays: Math.min(30, Math.max(1, Math.round(Number(s(f, "followupDays") ?? "3")) || 3)),
+      maxFollowups: Math.min(5, Math.max(1, Math.round(Number(s(f, "maxFollowups") ?? "2")) || 2)),
       aiMonthlyBudgetCents: Math.max(0, Math.round(Number(s(f, "aiBudgetDollars") ?? "200") * 100)),
     },
   });
   await audit("workspace.updated", { tenantId: ctx.tenant.id, userId: ctx.user.id });
   revalidatePath("/app", "layout");
+}
+
+export async function dismissOnboarding() {
+  const ctx = await requireCtx();
+  await prisma.tenant.update({ where: { id: ctx.tenant.id }, data: { onboardingDismissed: true } });
+  revalidatePath("/app");
 }
 
 // ───── team ─────

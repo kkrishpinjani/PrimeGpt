@@ -1,9 +1,10 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div>
         <h1 className="h1">{title}</h1>
         {subtitle && <p className="muted mt-1 max-w-2xl">{subtitle}</p>}
@@ -39,12 +40,15 @@ export function ScorePill({ score }: { score: number | null | undefined }) {
   return <Badge tone={tone as any}>{score}</Badge>;
 }
 
-export function Stat({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+export function Stat({ label, value, hint, icon: Icon }: { label: string; value: ReactNode; hint?: string; icon?: LucideIcon }) {
   return (
-    <div className="card">
-      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
-      {hint && <div className="muted mt-0.5 text-xs">{hint}</div>}
+    <div className="card flex items-start justify-between gap-3">
+      <div>
+        <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+        <div className="mt-1 text-2xl font-bold">{value}</div>
+        {hint && <div className="muted mt-0.5 text-xs">{hint}</div>}
+      </div>
+      {Icon && <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand/10 text-brand"><Icon size={20} aria-hidden /></span>}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { MiniMarkdown } from "@/components/mini-markdown";
 import { isDoNotContact } from "@/lib/brain/rules";
 import { requestBrief, saveCandidateNotes, scheduleInterview, setCandidateStatus } from "../../actions/recruiting";
 import { draftMessage } from "../../actions/outreach";
+import { deleteCandidate, updateCandidate } from "../../actions/data";
 
 export const metadata = { title: "Candidate" };
 
@@ -126,7 +127,7 @@ export default async function CandidatePage({ params, searchParams }: { params: 
             </form>
           </section>
 
-          <section className="card">
+          <section className="card scroll-mt-6" id="schedule">
             <h2 className="h2 mb-2">Interviews</h2>
             {c.interviews.map((i) => (
               <div key={i.id} className="mb-2 text-sm"><div>{fmtDate(i.startsAt)}</div>{i.meetLink && <a href={i.meetLink} target="_blank" rel="noreferrer" className="underline">Meet link</a>}</div>
@@ -140,6 +141,38 @@ export default async function CandidatePage({ params, searchParams }: { params: 
               </form>
             )}
           </section>
+          {ctx.canWrite && (
+            <section className="card">
+              <details>
+                <summary className="h2 cursor-pointer">Edit details</summary>
+                <form action={updateCandidate.bind(null, c.id)} className="mt-3 space-y-2">
+                  <div><label className="label">Full name</label><input name="fullName" defaultValue={c.fullName} required className="input" /></div>
+                  <div><label className="label">Title</label><input name="currentTitle" defaultValue={c.currentTitle ?? ""} className="input" /></div>
+                  <div><label className="label">Company</label><input name="currentCompany" defaultValue={c.currentCompany ?? ""} className="input" /></div>
+                  <div><label className="label">Headline</label><input name="headline" defaultValue={c.headline ?? ""} className="input" /></div>
+                  <div><label className="label">Location</label><input name="location" defaultValue={c.location ?? ""} className="input" /></div>
+                  <div><label className="label">Email</label><input name="email" type="email" defaultValue={c.email ?? ""} className="input" /></div>
+                  <div><label className="label">Phone</label><input name="phone" defaultValue={c.phone ?? ""} className="input" /></div>
+                  <div><label className="label">LinkedIn URL</label><input name="linkedinUrl" defaultValue={c.linkedinUrl ?? ""} className="input" /></div>
+                  <div><label className="label">Skills</label><input name="skills" defaultValue={c.skills ?? ""} className="input" /></div>
+                  <div><label className="label">Summary</label><textarea name="summary" defaultValue={c.summary ?? ""} className="input" /></div>
+                  <SubmitButton className="btn-primary btn-sm">Save changes</SubmitButton>
+                </form>
+              </details>
+            </section>
+          )}
+          {ctx.canWrite && (
+            <section className="card border-bad/30">
+              <details>
+                <summary className="h2 cursor-pointer text-bad">Erase this person</summary>
+                <form action={deleteCandidate.bind(null, c.id)} className="mt-3 space-y-3">
+                  <p className="muted">Permanently deletes this candidate and every message logged against them.</p>
+                  <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="keepDnc" defaultChecked className="mt-1" /><span>Also add them to the do-not-contact list so they are not re-imported and contacted again</span></label>
+                  <SubmitButton className="btn-danger btn-sm" confirm="Permanently delete this candidate and their messages? This cannot be undone.">Delete permanently</SubmitButton>
+                </form>
+              </details>
+            </section>
+          )}
           <Link href="/app/candidates" className="muted text-sm underline">← All candidates</Link>
         </aside>
       </div>

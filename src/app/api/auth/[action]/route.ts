@@ -11,6 +11,7 @@ const signup = z.object({
   password: z.string().min(10).max(200),
   company: z.string().min(1).max(120),
   inviteToken: z.string().optional(),
+  accountType: z.enum(["STANDARD", "SOLO", "WHITELABEL"]).optional(),
 });
 const login = z.object({ email: z.string().email(), password: z.string().min(1).max(200) });
 
@@ -42,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ action:
 
       let slug = slugify(d.company);
       if (await prisma.tenant.findUnique({ where: { slug } })) slug = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
-      const tenant = await prisma.tenant.create({ data: { name: d.company, slug } });
+      const tenant = await prisma.tenant.create({ data: { name: d.company, slug, kind: d.accountType ?? "STANDARD", brandName: d.accountType === "WHITELABEL" ? d.company : undefined } });
       const user = await prisma.user.create({ data: { email, name: d.name, passwordHash } });
       await prisma.membership.create({ data: { tenantId: tenant.id, userId: user.id, role: "OWNER" } });
       await createSession(user.id, tenant.id);
